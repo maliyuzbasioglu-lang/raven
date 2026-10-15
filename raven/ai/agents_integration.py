@@ -375,6 +375,16 @@ class RavenAgentManager:
 			# For OpenAI, all tools are supported
 			return self.tools
 
+	def _sampling_params(self):
+		"""Claude compatibility rejects combined sampling controls; leave defaults to Claude."""
+		if (
+			self.bot_doc.model_provider == "Local LLM"
+			and (self.settings.local_llm_api_url or "").rstrip("/") == "https://api.anthropic.com/v1"
+			and (self.bot_doc.model or "").startswith("claude-")
+		):
+			return {}
+		return {"temperature": self.bot_doc.temperature, "top_p": self.bot_doc.top_p}
+
 	def create_agent(self) -> Agent:
 		"""Create main agent with bot configuration"""
 
@@ -431,7 +441,7 @@ IMPORTANT: When calling tools, the SDK will handle the tool execution automatica
 			instructions = instructions + tools_instruction
 
 		# Create model settings
-		model_settings = ModelSettings(temperature=self.bot_doc.temperature, top_p=self.bot_doc.top_p)
+		model_settings = ModelSettings(**self._sampling_params())
 
 		# Add reasoning_effort if available (for o-series models)
 		if hasattr(self.bot_doc, "reasoning_effort") and self.bot_doc.reasoning_effort:
@@ -579,8 +589,7 @@ async def handle_ai_request_async(
 					api_params = {
 						"model": bot.model,
 						"messages": messages,
-						"temperature": agent.model_settings.temperature,
-						"top_p": agent.model_settings.top_p,
+						**manager._sampling_params(),
 						"max_tokens": 800,  # Reduced to avoid truncation and encourage conciseness
 					}
 
@@ -645,8 +654,7 @@ async def handle_ai_request_async(
 								final_response = await manager.client.chat.completions.create(
 									model=bot.model,
 									messages=messages,
-									temperature=agent.model_settings.temperature,
-									top_p=agent.model_settings.top_p,
+									**manager._sampling_params(),
 									max_tokens=2000,
 								)
 
